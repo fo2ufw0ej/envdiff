@@ -1,96 +1,84 @@
-// Command envdiff compares .env files across environments and highlights
-// missing or mismatched keys.
 package main
 
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/user/envdiff/internal/comparator"
+	"github.com/user/envdiff/internal/filter"
 	"github.com/user/envdiff/internal/loader"
 	"github.com/user/envdiff/internal/reporter"
 )
 
 func main() {
-	var (
-		dir     = flag.String("dir", "", "directory containing .env files to compare")
-		files   = flag.String("files", "", "comma-separated list of .env files to compare")
-		outFmt  = flag.String("format", "text", "output format: text (default)")
-	)
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: envdiff [options]\n\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  envdiff -dir ./envs\n")
-		fmt.Fprintf(os.Stderr, "  envdiff -files .env.development,.env.production\n")
-	}
+	files := flag.String("files", "", "Comma-separated list of .env files to compare")
+	dir := flag.String("dir", "", "Directory containing .env files to compare")
+	format := flag.String("format", "text", "Output format: text, json, markdown, csv")
+	onlyMissing := flag.Bool("only-missing", false, "Show only keys missing in at least one environment")
+	onlyMismatched := flag.Bool("only-mismatched", false, "Show only keys with differing values")
+	keyPrefix := flag.String("key-prefix", "", "Filter keys by prefix (case-insensitive)")
 	flag.Parse()
-
-	if *dir == "" && *files == "" {
-		fmt.Fprintln(os.Stderr, "error: provide -dir or -files")
-		flag.Usage()
-		os.Exit(1)
-	}
 
 	var envs map[string]map[string]string
 	var err error
 
-	if *dir != "" {
-		envs, err = loader.LoadDir(*dir)
-	} else {
+	switch {
+	case *files != "":
 		envs, err = loadCommaSeparated(*files)
+	case *dir != "":
+		envs, err = loader.LoadDir(*dir)
+	default:
+		fmt.Fprintln(os.Stderr, "error: provide --files or --dir")
+		os.Exit(1)
 	}
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error loading files: %v\n", err)
 		os.Exit(1)
 	}
 
-	if len(envs) == 0 {
-		fmt.Fprintln(os.Stderr, "no .env files found")
-		os.Exit(1)
-	}
+	result := comparator.Compare(envs)
 
-	results := comparator.Compare(envs)
+	result.Entries = filter.Apply(result.Entries, filter.Options{
+		OnlyMissing:    *onlyMissing,
+		OnlyMismatched: *onlyMismatched,
+		KeyPrefix:      *keyPrefix,
+	})
 
-	var rep reporter.Reporter
-	switch *outFmt {
-	default:
-		rep = reporter.NewTextReporter(os.Stdout)
-	}
-
-	if err := rep.Report(results); err != nil {
+	if err := writeReport(os.Stdout, *format, result); err != nil {
 		fmt.Fprintf(os.Stderr, "error writing report: %v\n", err)
 		os.Exit(1)
 	}
+}
 
-	if len(results) > 0 {
-		os.Exit(2)
+func writeReport(w io.Writer, format string, result comparator.Result) error {
+	switch format {
+	case "json":
+		return reporter.NewJSONReporter(w).Report(result)
+	case "markdown":
+		return reporter.NewMarkdownReporter(w).Report(result)
+	case "csv":
+		return reporter.NewCSVReporter(w).Report(result)
+	default:
+		return reporter.NewTextReporter(w).Report(result)
 	}
 }
 
-// loadCommaSeparated parses a comma-separated list of file paths and delegates
-// to loader.LoadFiles.
-func loadCommaSeparated(raw string) (map[string]map[string]string, error) {
-	var paths []string
-	for _, p := range splitComma(raw) {
-		if p != "" {
-			paths = append(paths, p)
-		}
-	}
+func loadCommaSeparated(s string) (map[string]map[string]string, error) {
+	paths := splitComma(s)
 	return loader.LoadFiles(paths)
 }
 
 func splitComma(s string) []string {
 	var out []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == ',' {
-			out = append(out, s[start:i])
-			start = i + 1
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
 		}
 	}
-	out = append(out, s[start:])
 	return out
 }

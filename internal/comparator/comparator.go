@@ -1,80 +1,76 @@
-// Package comparator provides functionality for comparing parsed .env files
-// across multiple environments and identifying discrepancies.
 package comparator
 
-// Result holds the outcome of comparing two or more .env files.
+import "sort"
+
+// DiffEntry represents a single key and its values across all compared environments.
+type DiffEntry struct {
+	// Key is the environment variable name.
+	Key string
+	// Values maps each environment name to the value found for Key.
+	// An empty string indicates the key is absent in that environment.
+	Values map[string]string
+}
+
+// Result holds the full output of a comparison across multiple environments.
 type Result struct {
-	// MissingIn maps an environment name to keys missing from that environment.
-	MissingIn map[string][]string
-	// Mismatched contains keys whose values differ across environments.
-	Mismatched []MismatchedKey
+	// Envs is the ordered list of environment names that were compared.
+	Envs []string
+	// Entries contains one DiffEntry per unique key found across all environments.
+	Entries []DiffEntry
 }
 
-// MismatchedKey describes a key that exists in all environments but has
-// differing values.
-type MismatchedKey struct {
-	Key    string
-	Values map[string]string // env name -> value
-}
-
-// Compare takes a map of environment name -> parsed key/value pairs and
-// returns a Result describing missing and mismatched keys.
+// Compare accepts a map of environment name → key/value pairs and returns a
+// Result describing every key found across all environments.
 func Compare(envs map[string]map[string]string) Result {
-	result := Result{
-		MissingIn: make(map[string][]string),
+	if len(envs) == 0 {
+		return Result{}
 	}
 
-	// Collect the union of all keys.
-	allKeys := unionKeys(envs)
+	keys := unionKeys(envs)
+	envNames := make([]string, 0, len(envs))
+	for name := range envs {
+		envNames = append(envNames, name)
+	}
+	sort.Strings(envNames)
 
-	for key := range allKeys {
-		values := make(map[string]string)
-		presentIn := []string{}
-
-		for envName, pairs := range envs {
-			if val, ok := pairs[key]; ok {
-				values[envName] = val
-				presentIn = append(presentIn, envName)
-			} else {
-				result.MissingIn[envName] = append(result.MissingIn[envName], key)
-			}
+	entries := make([]DiffEntry, 0, len(keys))
+	for _, key := range keys {
+		values := make(map[string]string, len(envNames))
+		for _, name := range envNames {
+			values[name] = envs[name][key]
 		}
-
-		if len(presentIn) < 2 {
-			continue
-		}
-
-		if hasMismatch(values) {
-			result.Mismatched = append(result.Mismatched, MismatchedKey{
-				Key:    key,
-				Values: values,
-			})
-		}
+		entries = append(entries, DiffEntry{Key: key, Values: values})
 	}
 
-	return result
+	return Result{Envs: envNames, Entries: entries}
 }
 
-func unionKeys(envs map[string]map[string]string) map[string]struct{} {
-	keys := make(map[string]struct{})
-	for _, pairs := range envs {
-		for k := range pairs {
-			keys[k] = struct{}{}
+// unionKeys returns a sorted slice of all unique keys across every environment.
+func unionKeys(envs map[string]map[string]string) []string {
+	seen := make(map[string]struct{})
+	for _, kv := range envs {
+		for k := range kv {
+			seen[k] = struct{}{}
 		}
 	}
+	keys := make([]string, 0, len(seen))
+	for k := range seen {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 	return keys
 }
 
-func hasMismatch(values map[string]string) bool {
-	var first string
-	set := false
-	for _, v := range values {
-		if !set {
-			first = v
-			set = true
+// hasMismatch reports whether a DiffEntry has differing values across environments.
+func hasMismatch(e DiffEntry) bool {
+	var first *string
+	for _, v := range e.Values {
+		if first == nil {
+			copy := v
+			first = &copy
 			continue
 		}
-		if v != first {
+		if v != *first {
 			return true
 		}
 	}
