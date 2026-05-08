@@ -17,6 +17,6 @@
 //	}
 //	result := comparator.Compare(envs)
 //
-The Result type exposes MissingIn and Mismatched fields that downstream
+// The Result type exposes MissingIn and Mismatched fields that downstream
 // reporters can use to render human-readable output.
 package comparator
