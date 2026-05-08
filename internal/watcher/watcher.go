@@ -66,6 +66,20 @@ func (w *Watcher) Watch(done <-chan struct{}) <-chan ChangeEvent {
 	return ch
 }
 
+// Add appends a new file path to the set of watched paths. If the file is
+// accessible, its current state is recorded so the next poll can detect changes.
+func (w *Watcher) Add(path string) {
+	for _, p := range w.paths {
+		if p == path {
+			return // already watching
+		}
+	}
+	w.paths = append(w.paths, path)
+	if s, err := stat(path); err == nil {
+		w.states[path] = s
+	}
+}
+
 func (w *Watcher) poll() []string {
 	var changed []string
 	for _, p := range w.paths {
