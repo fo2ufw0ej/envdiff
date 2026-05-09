@@ -76,6 +76,19 @@ func TestDiff_NoChanges(t *testing.T) {
 	}
 }
 
+// TestDiff_RemovedEntry verifies that entries present in the baseline but
+// absent from the current results are included in the delta.
+func TestDiff_RemovedEntry(t *testing.T) {
+	base := &baseline.Baseline{Entries: results()}
+	// Drop the last entry (SECRET) from current results.
+	current := results()[:2]
+
+	delta := baseline.Diff(base, current)
+	if len(delta) != 1 || delta[0].Key != "SECRET" {
+		t.Errorf("expected 1 removed entry SECRET, got %+v", delta)
+	}
+}
+
 func TestSave_InvalidPath(t *testing.T) {
 	err := baseline.Save("/no/such/dir/baseline.json", results())
 	if err == nil {
