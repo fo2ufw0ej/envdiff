@@ -19,4 +19,7 @@
 //
 // The Result type exposes MissingIn and Mismatched fields that downstream
 // reporters can use to render human-readable output.
+//
+// Note: Compare requires at least two environments to produce meaningful
+// results. Passing fewer than two environments will return an empty Result.
 package comparator
