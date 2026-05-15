@@ -88,3 +88,10 @@ func TestApply_UnmatchedRuleNotMarked(t *testing.T) {
 		t.Errorf("expected rule to be unmatched")
 	}
 }
+
+func TestApply_EmptyNewKeyError(t *testing.T) {
+	_, _, err := renamer.Apply(nil, []renamer.Rule{{OldKey: "FOO", NewKey: ""}})
+	if err == nil {
+		t.Fatal("expected error for empty NewKey")
+	}
+}
